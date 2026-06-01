@@ -1,0 +1,1752 @@
+<!doctype html>
+<!--
+  Antifer Geometry Calculator — production single-file build
+
+  Installation / deployment:
+  1. Save this file as antifer_geometry.html.
+  2. Open it directly in a modern browser, or serve the containing folder with:
+       python -m http.server 8000
+     then open http://localhost:8000/antifer_geometry.html
+  3. No npm packages, build step, external JavaScript libraries, WebGL runtime,
+     CAD viewer or server-side component are required.
+  4. OBJ, STL and TXT files are exported locally by the browser from the same
+     generated B-rep used for display and validation.
+
+  Numerical policy:
+  - SI units are used internally; exported coordinates are in metres.
+  - The physical bottom datum is z = 0.
+  - X and Y exported coordinates are shifted to the homogeneous centre of mass.
+  - Groove sampling is fixed to 144 arc points to remain aligned with script.py.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Antifer Geometry Calculator — Pita (1986) / Carvalho (2026)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel2: #1f2937;
+      --line: #334155;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --accent2: #93c5fd;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --field: #020617;
+      --mono: Consolas, "SFMono-Regular", Menlo, Monaco, monospace;
+      --sans: "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+    body { overflow-x: hidden; }
+    header { padding: 22px 24px 16px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #111827 0%, #0f172a 100%); }
+    header h1 { margin: 0 0 8px; font-size: 24px; font-weight: 700; letter-spacing: 0.2px; }
+    header p { margin: 0; color: var(--muted); font-size: 15px; max-width: 1180px; line-height: 1.48; }
+    main { display: grid; grid-template-columns: 450px minmax(560px, 1fr); gap: 16px; padding: 16px; }
+    @media (max-width: 1050px) { main { grid-template-columns: 1fr; } }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 40px rgba(0,0,0,0.25); overflow: hidden; }
+    .panel h2 { margin: 0; padding: 15px 16px; font-size: 17px; background: var(--panel2); border-bottom: 1px solid var(--line); }
+    .panel .body { padding: 16px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    label { color: var(--muted); font-size: 14px; }
+    input[type="number"], select, textarea { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; font: 15px var(--sans); outline: none; }
+    input[type="number"]:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(96,165,250,0.18); }
+    .radios { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 14px; }
+    .radio-card { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: rgba(2,6,23,0.45); cursor: pointer; }
+    .radio-card strong { display: block; margin-bottom: 3px; font-size: 15px; }
+    .radio-card span { display: block; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+    .buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    button { background: #1d4ed8; color: white; border: 0; border-radius: 10px; padding: 11px 13px; font: 600 14px var(--sans); cursor: pointer; }
+    button.secondary { background: #374151; }
+    button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+    button:hover { filter: brightness(1.08); }
+    .small { font-size: 13px; color: var(--muted); line-height: 1.45; }
+    .status { margin-top: 12px; padding: 10px 11px; border-radius: 10px; border: 1px solid var(--line); background: rgba(2,6,23,0.55); font: 13px var(--mono); white-space: pre-wrap; }
+    .status.ok { border-color: rgba(34,197,94,0.55); color: #bbf7d0; }
+    .status.bad { border-color: rgba(239,68,68,0.65); color: #fecaca; }
+    .viewer-wrap { position: relative; min-height: 580px; }
+    #viewer { width: 100%; height: 580px; display: block; background: #2d304c; border-bottom: 1px solid var(--line); cursor: grab; }
+    #viewer:active { cursor: grabbing; }
+    .viewer-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; background: var(--panel2); }
+    .viewer-tools label { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text); }
+    .tables { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: 16px; padding: 16px; }
+    @media (max-width: 900px) { .tables { grid-template-columns: 1fr; } }
+    table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 14px; background: rgba(2,6,23,0.45); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    caption { text-align: left; font-weight: 700; padding: 10px 0 8px; color: var(--accent2); }
+    th, td { padding: 8px 10px; border-bottom: 1px solid rgba(51,65,85,0.72); vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    th { text-align: left; color: var(--muted); font-weight: 600; background: rgba(15,23,42,0.95); }
+    th:last-child { text-align: right; }
+    td:first-child { width: 58%; }
+    td.value { width: 42%; text-align: right; font-family: var(--mono); white-space: nowrap; }
+    .wide { grid-column: 1 / -1; }
+
+    .drawings-panel { border: 1px solid var(--line); border-radius: 12px; background: rgba(2,6,23,0.45); padding: 12px; }
+    .drawings-panel h3 { margin: 0 0 10px; font-size: 16px; color: var(--accent2); }
+    .drawing-grid { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 12px; }
+    @media (max-width: 1050px) { .drawing-grid { grid-template-columns: 1fr; } }
+    .drawing-card { background: #0b1224; color: var(--text); border: 1px solid #1e3a8a; border-radius: 11px; padding: 6px; box-shadow: inset 0 0 0 1px rgba(147,197,253,0.10); }
+    .drawing-card h4 { margin: 0 0 5px; font-size: 14px; font-weight: 700; color: var(--accent2); }
+    .drawing-card canvas { width: 100%; height: 300px; display: block; background: #0b1224; border: 1px solid rgba(147,197,253,0.35); border-radius: 7px; }
+    .drawing-note { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.42; }
+    .footer-note { padding: 0 16px 16px; color: var(--muted); font-size: 13px; line-height: 1.48; }
+    a { color: var(--accent2); }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Antifer Geometry Calculator</h1>
+  <p>
+    Standalone HTML application for Antifer geometry calculation, closed B-rep generation, topological validation,
+    volume validation and in-browser 3D visualisation. The model is generated directly from dimensional coefficients,
+    with no embedded template solid, no external JavaScript library, no CAD viewer and no server requirement.
+  </p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Inputs</h2>
+    <div class="body">
+      <div class="radios" id="profileRadios">
+        <label class="radio-card">
+          <input type="radio" name="profile" value="pita_1986" checked />
+          <span><strong>Pita (1986)</strong>Historical proportional convention for an Antifer unit defined by tapered square sections, lateral chamfers and four circular side grooves.</span>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="profile" value="carvalho_2026" />
+          <span><strong>Carvalho (2026)</strong>Volume-normalised geometric convention using the same Antifer topology, section logic and circular-groove construction.</span>
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="weight">Antifer weight W [kN]</label>
+          <input id="weight" type="number" min="0.000001" step="0.001" value="680.0" />
+        </div>
+        <div class="field">
+          <label for="unitWeight">Concrete unit weight Wc [kN/m³]</label>
+          <input id="unitWeight" type="number" min="0.000001" step="0.001" value="27.2" />
+        </div>
+        <div class="field">
+          <label for="arcPoints">Groove arc points (script.py)</label>
+          <input id="arcPoints" type="number" min="144" max="144" step="1" value="144" readonly />
+        </div>
+        <div class="field">
+          <label for="precision">Displayed decimals</label>
+          <input id="precision" type="number" min="3" max="12" step="1" value="6" />
+        </div>
+      </div>
+
+      <div class="buttons">
+        <button id="recalculate">Recalculate</button>
+        <button class="secondary" id="resetView">Reset view</button>
+        <button class="ghost" id="downloadObj">Download OBJ</button>
+        <button class="ghost" id="downloadStl">Download STL</button>
+        <button class="ghost" id="downloadReport">Download report</button>
+        <button class="ghost" id="copyReport">Copy report</button>
+      </div>
+
+      <p class="small">
+        The solid is generated directly from coefficients. Displayed and exported coordinates shift X and Y to the homogeneous centre of mass while preserving the physical bottom datum at z = 0.
+      </p>
+      <div id="status" class="status ok">Ready.</div>
+    </div>
+  </section>
+
+  <section class="panel viewer-wrap">
+    <h2>3D visualisation</h2>
+    <canvas id="viewer" width="1200" height="760"></canvas>
+    <div class="viewer-tools">
+      <label><input type="checkbox" id="wireframeMode" /> Wireframe mode</label>
+      <label><input type="checkbox" id="showAxes" checked /> Axes</label>
+      <label><input type="checkbox" id="autoRotate" /> Auto-rotate</label>
+      <span class="small">Drag to rotate. Right/middle/Shift-drag to pan. Mouse wheel to zoom. Double-click to reset.</span>
+    </div>
+  </section>
+</main>
+
+<section class="panel" style="margin: 0 16px 16px;">
+  <h2>Calculation and validation</h2>
+  <div class="tables">
+    <div>
+      <table id="tableInputs"><caption>Inputs and volume</caption><thead><tr><th>Item</th><th>Value</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div>
+      <table id="tableCoefficients"><caption>Non-dimensional coefficients</caption><thead><tr><th>Quantity</th><th>Value</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div>
+      <table id="tableDimensions"><caption>Calculated dimensions</caption><thead><tr><th>Quantity</th><th>Value</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div>
+      <table id="tableValidation"><caption>B-rep validation</caption><thead><tr><th>Check</th><th>Value</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="wide drawings-panel">
+      <h3>Drawings</h3>
+      <div class="drawing-grid">
+        <div class="drawing-card">
+          <h4>Top plan (z = H)</h4>
+          <canvas id="drawingTop" width="600" height="380"></canvas>
+        </div>
+        <div class="drawing-card">
+          <h4>Front view</h4>
+          <canvas id="drawingFront" width="600" height="380"></canvas>
+        </div>
+        <div class="drawing-card">
+          <h4>Bottom plan (z = 0)</h4>
+          <canvas id="drawingBottom" width="600" height="380"></canvas>
+        </div>
+      </div>
+      <p class="drawing-note">Drawings are generated in-browser from the same active dimensional coefficients used by the solid model. Top and bottom plans use the current groove, radius and chamfer geometry; the front view shows the A/B/H tapered elevation.</p>
+    </div>
+  </div>
+  <div class="footer-note">
+    OBJ, STL and the calculation report are generated from the same closed B-rep used by the viewer. The plain-text report remains available through the export buttons. STL is an ASCII triangular surface mesh; OBJ uses indexed triangular faces. Coordinates are in metres.
+  </div>
+</section>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Production constants and dimensional coefficients
+
+   These constants define the two supported Antifer profiles. Geometry is
+   generated analytically from coefficients; no hidden template mesh is used.
+   Keep DEFAULT_GROOVE_ARC_POINTS fixed at 144 when parity with script.py is
+   required for OBJ/STL triangulation.
+   ============================================================ */
+
+const STANDARD_GRAVITY_M_S2 = 9.80665;
+const DEFAULT_GROOVE_ARC_POINTS = 144;
+const VOLUME_TOLERANCE_RELATIVE = 1.0e-10;
+
+const PITA_HISTORICAL_VOLUME_COEFFICIENT = 1.024700000000;
+const PITA_COMMON_DIMENSION_FACTOR = 1.000000;
+const PITA_BOTTOM_WIDTH_COEFFICIENT = 1.086000;
+const PITA_TOP_WIDTH_COEFFICIENT = 1.005000;
+const PITA_HISTORICAL_GROOVE_DIMENSION_COEFFICIENT = 0.09559354039013697;
+const PITA_EDGE_CHAMFER_COEFFICIENT = 0.024000;
+const PITA_GROOVE_RADIUS_COEFFICIENT = 0.121500000000;
+const PITA_GROOVE_CENTRE_OFFSET_COEFFICIENT = 0.025906459609863028;
+const PITA_GROOVE_DIMENSION_COEFFICIENT = PITA_GROOVE_RADIUS_COEFFICIENT - PITA_GROOVE_CENTRE_OFFSET_COEFFICIENT;
+const PITA_GENERATED_BREP_VOLUME_COEFFICIENT_REFERENCE = PITA_HISTORICAL_VOLUME_COEFFICIENT;
+
+const CARVALHO_VOLUME_COEFFICIENT = 1.000000;
+const CARVALHO_COMMON_DIMENSION_FACTOR = Math.sqrt(CARVALHO_VOLUME_COEFFICIENT / PITA_GENERATED_BREP_VOLUME_COEFFICIENT_REFERENCE);
+
+const GEOMETRY_PROFILES = {
+  pita_1986: {
+    key: "pita_1986",
+    label: "Pita (1986)",
+    filenameSuffix: "pita1986",
+    referenceVolumeCoefficient: PITA_HISTORICAL_VOLUME_COEFFICIENT,
+    commonDimensionFactor: PITA_COMMON_DIMENSION_FACTOR,
+    bottomWidthCoefficient: PITA_BOTTOM_WIDTH_COEFFICIENT,
+    topWidthCoefficient: PITA_TOP_WIDTH_COEFFICIENT,
+    historicalGrooveDimensionCoefficient: PITA_HISTORICAL_GROOVE_DIMENSION_COEFFICIENT,
+    grooveDimensionCoefficient: PITA_GROOVE_DIMENSION_COEFFICIENT,
+    edgeChamferCoefficient: PITA_EDGE_CHAMFER_COEFFICIENT,
+    grooveRadiusCoefficient: PITA_GROOVE_RADIUS_COEFFICIENT,
+    grooveCentreOffsetCoefficient: PITA_GROOVE_CENTRE_OFFSET_COEFFICIENT
+  },
+  carvalho_2026: {
+    key: "carvalho_2026",
+    label: "Carvalho (2026)",
+    filenameSuffix: "carvalho2026",
+    referenceVolumeCoefficient: CARVALHO_VOLUME_COEFFICIENT,
+    commonDimensionFactor: CARVALHO_COMMON_DIMENSION_FACTOR,
+    bottomWidthCoefficient: PITA_BOTTOM_WIDTH_COEFFICIENT * CARVALHO_COMMON_DIMENSION_FACTOR,
+    topWidthCoefficient: PITA_TOP_WIDTH_COEFFICIENT * CARVALHO_COMMON_DIMENSION_FACTOR,
+    historicalGrooveDimensionCoefficient: PITA_HISTORICAL_GROOVE_DIMENSION_COEFFICIENT * CARVALHO_COMMON_DIMENSION_FACTOR,
+    grooveDimensionCoefficient: PITA_GROOVE_DIMENSION_COEFFICIENT * CARVALHO_COMMON_DIMENSION_FACTOR,
+    edgeChamferCoefficient: PITA_EDGE_CHAMFER_COEFFICIENT * CARVALHO_COMMON_DIMENSION_FACTOR,
+    grooveRadiusCoefficient: PITA_GROOVE_RADIUS_COEFFICIENT * CARVALHO_COMMON_DIMENSION_FACTOR,
+    grooveCentreOffsetCoefficient: PITA_GROOVE_CENTRE_OFFSET_COEFFICIENT * CARVALHO_COMMON_DIMENSION_FACTOR
+  }
+};
+
+let activeBrep = null;
+let activeMetrics = null;
+let activeReport = "";
+const unitVolumeCache = new Map();
+
+/* ============================================================
+   Generic utilities
+
+   The application intentionally uses browser-standard APIs only: DOM, Canvas
+   2D, Blob downloads and Clipboard API with a legacy fallback.
+   ============================================================ */
+
+function clamp(value, lo, hi) { return Math.min(hi, Math.max(lo, value)); }
+function fmt(value, decimals = 6) {
+  if (!Number.isFinite(value)) return String(value);
+  return Number(value).toFixed(decimals);
+}
+function sci(value, decimals = 6) {
+  if (!Number.isFinite(value)) return String(value);
+  return Number(value).toExponential(decimals);
+}
+function profileByKey(key) {
+  const profile = GEOMETRY_PROFILES[key];
+  if (!profile) throw new Error(`Unknown geometry profile: ${key}`);
+  return profile;
+}
+function selectedProfileKey() {
+  return document.querySelector('input[name="profile"]:checked').value;
+}
+function parsePositiveNumber(id, label) {
+  const value = Number(document.getElementById(id).value);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be a positive number.`);
+  return value;
+}
+function parseIntegerInRange(id, label, minValue, maxValue) {
+  const value = Math.round(Number(document.getElementById(id).value));
+  if (!Number.isFinite(value) || value < minValue || value > maxValue) {
+    throw new Error(`${label} must be an integer between ${minValue} and ${maxValue}.`);
+  }
+  document.getElementById(id).value = String(value);
+  return value;
+}
+function downloadText(filename, text, mimeType) {
+  const blob = new Blob([text], { type: mimeType || "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function safeFilenameNumber(value) {
+  const number = Number(value);
+  if (Math.abs(number - Math.round(number)) < 1.0e-9) return String(Math.round(number));
+  return number.toFixed(3).replace(/0+$/g, "").replace(/\.$/g, "").replace(/-/g, "m").replace(/\./g, "p");
+}
+
+/* ============================================================
+   Vector operations
+
+   Minimal 3D vector primitives used by the B-rep validation, STL normals and
+   software-rendered Canvas viewer.
+   ============================================================ */
+
+function vSub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function vDot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function vCross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ];
+}
+function vLen(a) { return Math.sqrt(vDot(a, a)); }
+function vNormalize(a) {
+  const len = vLen(a);
+  if (len <= 0) return [0, 0, 0];
+  return [a[0] / len, a[1] / len, a[2] / len];
+}
+/* ============================================================
+   Section and B-rep generation
+
+   A horizontal Antifer section is built as four circular groove arcs joined
+   by straight edges and corner chamfers. The bottom and top sections are then
+   connected into a closed boundary representation.
+   ============================================================ */
+
+function cleanSectionPoints(points, tol = 1.0e-12) {
+  const clean = [];
+  for (const p of points) {
+    const last = clean[clean.length - 1];
+    if (!last || Math.abs(last[0] - p[0]) > tol || Math.abs(last[1] - p[1]) > tol) {
+      clean.push([p[0], p[1]]);
+    }
+  }
+  if (clean.length > 1) {
+    const first = clean[0];
+    const last = clean[clean.length - 1];
+    if (Math.abs(first[0] - last[0]) <= tol && Math.abs(first[1] - last[1]) <= tol) clean.pop();
+  }
+  return clean;
+}
+
+function grooveHalfOpeningFromRadiusAndOffset(R, centreOffset) {
+  if (R <= 0) throw new Error("Groove radius R must be positive.");
+  if (centreOffset < 0 || centreOffset >= R) throw new Error("The groove centre offset E must satisfy 0 <= E < R.");
+  return Math.sqrt(Math.max(0, R * R - centreOffset * centreOffset));
+}
+
+function eastSideLocalPoints(R, centreOffset, n) {
+  if (n < 2) throw new Error("At least two points are required to sample the groove arc.");
+
+  const q = grooveHalfOpeningFromRadiusAndOffset(R, centreOffset);
+  const theta = Math.acos(centreOffset / R);
+  let points = [];
+
+  for (let i = 0; i < n; i++) {
+    const angle = -theta + 2.0 * theta * i / (n - 1);
+    const y = R * Math.sin(angle);
+    const x = -centreOffset + R * Math.cos(angle);
+    points.push([x, y]);
+  }
+
+  const exactArea = R * R * Math.acos(centreOffset / R) - centreOffset * q;
+  let polylineArea = 0.0;
+  let correctionWeightArea = 0.0;
+
+  for (let i = 0; i < n - 1; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[i + 1];
+    const dy = y2 - y1;
+    polylineArea += 0.5 * (x1 + x2) * dy;
+
+    const t1 = q ? y1 / q : 0.0;
+    const t2 = q ? y2 / q : 0.0;
+    const w1 = (1.0 - t1 * t1) * t1 * t1;
+    const w2 = (1.0 - t2 * t2) * t2 * t2;
+    correctionWeightArea += 0.5 * (w1 + w2) * dy;
+  }
+
+  const areaError = exactArea - polylineArea;
+  if (Math.abs(correctionWeightArea) > 1.0e-18) {
+    const correction = areaError / correctionWeightArea;
+    points = points.map(([x, y]) => {
+      const t = q ? y / q : 0.0;
+      const weight = (1.0 - t * t) * t * t;
+      return [x + correction * weight, y];
+    });
+  }
+
+  return points;
+}
+
+function eastSideGlobalPoints(width, R, centreOffset, n) {
+  const half = 0.5 * width;
+  return eastSideLocalPoints(R, centreOffset, n).map(([x, y]) => [half - x, y]);
+}
+
+function section2D(width, D, R, centreOffset, n) {
+  const half = 0.5 * width;
+  const q = grooveHalfOpeningFromRadiusAndOffset(R, centreOffset);
+  if (q >= half - D) throw new Error("Invalid Antifer geometry: groove opening is too large for the side length.");
+
+  const east = eastSideGlobalPoints(width, R, centreOffset, n);                 // south to north
+  const north = east.map(([x, y]) => [-y, x]);                                  // east to west
+  const west = east.map(([x, y]) => [-x, -y]);                                  // north to south
+  const south = east.map(([x, y]) => [y, -x]);                                  // west to east
+
+  const segments = [
+    [[half - D, -half], [half, -half + D]],
+    [[half, -half + D], [half, -q]],
+    east,
+    [[half, q], [half, half - D]],
+    [[half, half - D], [half - D, half]],
+    [[half - D, half], [q, half]],
+    north,
+    [[-q, half], [-half + D, half]],
+    [[-half + D, half], [-half, half - D]],
+    [[-half, half - D], [-half, q]],
+    west,
+    [[-half, -q], [-half, -half + D]],
+    [[-half, -half + D], [-half + D, -half]],
+    [[-half + D, -half], [-q, -half]],
+    south,
+    [[q, -half], [half - D, -half]]
+  ];
+
+  const points = [];
+  for (const segment of segments) for (const p of segment) points.push(p);
+  return cleanSectionPoints(points);
+}
+
+function appendCapFace(faces, ringStart, n, upward) {
+  const indices = [];
+  for (let i = 0; i < n; i++) indices.push(ringStart + i);
+  faces.push(upward ? indices : indices.reverse());
+}
+
+function makeBrepForDimensions(H, A, B, C, D, R, centreOffset, n) {
+  if (H <= 0) throw new Error("Invalid Antifer geometry: H must be positive.");
+  if (A <= 0 || B <= 0) throw new Error("Invalid Antifer geometry: section widths must be positive.");
+  const expectedC = R - centreOffset;
+  const cTolerance = Math.max(1.0e-12, Math.abs(expectedC) * 1.0e-10);
+  if (Math.abs(C - expectedC) > cTolerance) {
+    throw new Error(`Invalid Antifer geometry: C must be R - E. C=${C}, R-E=${expectedC}.`);
+  }
+
+  const bottom = section2D(A, D, R, centreOffset, n);
+  const top = section2D(B, D, R, centreOffset, n);
+  if (bottom.length !== top.length) throw new Error("Internal geometry error: section vertex counts do not match.");
+
+  const vertices = [];
+  for (const [x, y] of bottom) vertices.push([x, y, 0.0]);
+  for (const [x, y] of top) vertices.push([x, y, H]);
+
+  const faces = [];
+  const count = bottom.length;
+  for (let i = 0; i < count; i++) {
+    const j = (i + 1) % count;
+    faces.push([i, j, count + j, count + i]);
+  }
+  appendCapFace(faces, 0, count, false);
+  appendCapFace(faces, count, count, true);
+
+  if (signedBrepVolume(vertices, faces) < 0) {
+    for (const face of faces) face.reverse();
+  }
+  return { vertices, faces };
+}
+
+function triangulateFace(face) {
+  const tris = [];
+  if (face.length < 3) return tris;
+  for (let i = 1; i < face.length - 1; i++) tris.push([face[0], face[i], face[i + 1]]);
+  return tris;
+}
+
+function signedBrepVolume(vertices, faces) {
+  let volume = 0.0;
+  for (const face of faces) {
+    for (const [ia, ib, ic] of triangulateFace(face)) {
+      const [ax, ay, az] = vertices[ia];
+      const [bx, by, bz] = vertices[ib];
+      const [cx, cy, cz] = vertices[ic];
+      volume += (
+        ax * (by * cz - bz * cy)
+        - ay * (bx * cz - bz * cx)
+        + az * (bx * cy - by * cx)
+      ) / 6.0;
+    }
+  }
+  return volume;
+}
+
+function brepVolume(vertices, faces) {
+  return Math.abs(signedBrepVolume(vertices, faces));
+}
+
+function signedBrepVolumeAndCentroid(vertices, faces) {
+  let signedVolume = 0.0;
+  let cxSum = 0.0, cySum = 0.0, czSum = 0.0;
+  for (const face of faces) {
+    for (const [ia, ib, ic] of triangulateFace(face)) {
+      const [ax, ay, az] = vertices[ia];
+      const [bx, by, bz] = vertices[ib];
+      const [cx, cy, cz] = vertices[ic];
+      const tetraVolume = (
+        ax * (by * cz - bz * cy)
+        - ay * (bx * cz - bz * cx)
+        + az * (bx * cy - by * cx)
+      ) / 6.0;
+      signedVolume += tetraVolume;
+      cxSum += tetraVolume * (ax + bx + cx) / 4.0;
+      cySum += tetraVolume * (ay + by + cy) / 4.0;
+      czSum += tetraVolume * (az + bz + cz) / 4.0;
+    }
+  }
+  if (Math.abs(signedVolume) <= 1.0e-15) throw new Error("Cannot compute centre of mass: B-rep signed volume is zero.");
+  return {
+    signedVolume,
+    centroid: [cxSum / signedVolume, cySum / signedVolume, czSum / signedVolume]
+  };
+}
+
+function translateVertices(vertices, offset) {
+  return vertices.map(([x, y, z]) => [x + offset[0], y + offset[1], z + offset[2]]);
+}
+
+function unitBrepVolumeCoefficient(profileKey, n) {
+  const cacheKey = `${profileKey}:${n}`;
+  if (unitVolumeCache.has(cacheKey)) return unitVolumeCache.get(cacheKey);
+  const p = profileByKey(profileKey);
+  const H = 1.0;
+  const A = p.bottomWidthCoefficient;
+  const B = p.topWidthCoefficient;
+  const D = p.edgeChamferCoefficient;
+  const R = p.grooveRadiusCoefficient;
+  const E = p.grooveCentreOffsetCoefficient;
+  const C = R - E;
+  const brep = makeBrepForDimensions(H, A, B, C, D, R, E, n);
+  const value = brepVolume(brep.vertices, brep.faces);
+  unitVolumeCache.set(cacheKey, value);
+  return value;
+}
+
+function calculateDimensions(W_kN, Wc_kN_m3, profileKey, n) {
+  if (W_kN <= 0) throw new Error("Antifer weight W must be positive.");
+  if (Wc_kN_m3 <= 0) throw new Error("Concrete unit weight Wc must be positive.");
+  const profile = profileByKey(profileKey);
+  const volume = W_kN / Wc_kN_m3;
+  const generatedKV = unitBrepVolumeCoefficient(profileKey, n);
+  const H = Math.cbrt(volume / profile.referenceVolumeCoefficient);
+  const A = profile.bottomWidthCoefficient * H;
+  const B = profile.topWidthCoefficient * H;
+  const D = profile.edgeChamferCoefficient * H;
+  const R = profile.grooveRadiusCoefficient * H;
+  const grooveCentreOffset = profile.grooveCentreOffsetCoefficient * H;
+  const C = R - grooveCentreOffset;
+  const grooveHalfOpening = grooveHalfOpeningFromRadiusAndOffset(R, grooveCentreOffset);
+  const mainLateralHalfWidthReduction = 0.5 * (A - B);
+  const mainLateralAngleFromVerticalDeg = Math.atan2(mainLateralHalfWidthReduction, H) * 180 / Math.PI;
+  const bottomPlaneToMainLateralPlaneAngleDeg = 90.0 - mainLateralAngleFromVerticalDeg;
+  return {
+    profile, W_kN, Wc_kN_m3, volume,
+    referenceVolumeCoefficient: profile.referenceVolumeCoefficient,
+    generatedVolumeCoefficient: generatedKV,
+    H, A, B, C, D, R,
+    grooveCentreOffset,
+    grooveHalfOpening,
+    grooveOpening: 2.0 * grooveHalfOpening,
+    mainLateralHalfWidthReduction,
+    mainLateralAngleFromVerticalDeg,
+    bottomPlaneToMainLateralPlaneAngleDeg,
+    W_ton: W_kN / STANDARD_GRAVITY_M_S2
+  };
+}
+
+function generateAntiferBrep(W_kN, Wc_kN_m3, profileKey, n) {
+  const dimensions = calculateDimensions(W_kN, Wc_kN_m3, profileKey, n);
+  const raw = makeBrepForDimensions(
+    dimensions.H,
+    dimensions.A,
+    dimensions.B,
+    dimensions.C,
+    dimensions.D,
+    dimensions.R,
+    dimensions.grooveCentreOffset,
+    n
+  );
+  const { signedVolume, centroid: constructionCentroid } = signedBrepVolumeAndCentroid(raw.vertices, raw.faces);
+  if (signedVolume < 0) {
+    for (const face of raw.faces) face.reverse();
+  }
+  const volume = Math.abs(signedBrepVolume(raw.vertices, raw.faces));
+  const originShift = [-constructionCentroid[0], -constructionCentroid[1], 0.0];
+  const vertices = translateVertices(raw.vertices, originShift);
+  const exportedCentroid = signedBrepVolumeAndCentroid(vertices, raw.faces).centroid;
+  return {
+    dimensions,
+    vertices,
+    faces: raw.faces,
+    volume,
+    constructionCentroid,
+    originShift,
+    exportedCentroid
+  };
+}
+
+/* ============================================================
+   Validation, triangulation and file exports
+
+   The native B-rep keeps side faces as quadrilaterals and caps as polygons.
+   OBJ and STL exports use a deterministic triangular mesh derived from the
+   same B-rep. Horizontal caps are triangulated with ear clipping to avoid the
+   centre-fan artefacts produced by concave cap polygons.
+   ============================================================ */
+
+function edgeKey(a, b) {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+function validateClosedShellEdges(faces) {
+  const counts = new Map();
+  for (const face of faces) {
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i], b = face[(i + 1) % face.length];
+      const key = edgeKey(a, b);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+  let bad = 0;
+  for (const count of counts.values()) if (count !== 2) bad += 1;
+  return { edgeCount: counts.size, badEdgeCount: bad, closed: bad === 0 };
+}
+function triangulatedFaces(faces) {
+  const tris = [];
+  for (const face of faces) tris.push(...triangulateFace(face));
+  return tris;
+}
+function surfaceArea(vertices, faces) {
+  let area = 0.0;
+  for (const tri of triangulatedFaces(faces)) {
+    const a = vertices[tri[0]], b = vertices[tri[1]], c = vertices[tri[2]];
+    area += 0.5 * vLen(vCross(vSub(b, a), vSub(c, a)));
+  }
+  return area;
+}
+function sectionVertexCountFromBrep(brep) {
+  return Math.max(0, Math.floor(brep.vertices.length / 2));
+}
+function polygonSignedAreaXY(vertices, face) {
+  let area = 0.0;
+  for (let i = 0; i < face.length; i++) {
+    const current = face[i];
+    const following = face[(i + 1) % face.length];
+    const [x1, y1] = vertices[current];
+    const [x2, y2] = vertices[following];
+    area += x1 * y2 - x2 * y1;
+  }
+  return 0.5 * area;
+}
+function triangleCrossXY(vertices, a, b, c) {
+  const [ax, ay] = vertices[a];
+  const [bx, by] = vertices[b];
+  const [cx, cy] = vertices[c];
+  return (bx - ax) * (cy - by) - (by - ay) * (cx - bx);
+}
+function pointInsideProjectedTriangle(vertices, point, a, b, c, orientation, tolerance) {
+  const [px, py] = vertices[point];
+  const [ax, ay] = vertices[a];
+  const [bx, by] = vertices[b];
+  const [cx, cy] = vertices[c];
+  const c1 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+  const c2 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+  const c3 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+  if (orientation > 0.0) return c1 >= -tolerance && c2 >= -tolerance && c3 >= -tolerance;
+  return c1 <= tolerance && c2 <= tolerance && c3 <= tolerance;
+}
+function triangulateHorizontalCapFace(vertices, face) {
+  if (face.length < 3) throw new Error("A cap face requires at least three vertices.");
+  if (face.length === 3) return [[face[0], face[1], face[2]]];
+
+  const remaining = face.slice();
+  const orientation = polygonSignedAreaXY(vertices, face) >= 0.0 ? 1.0 : -1.0;
+  let coordinateScale = 1.0;
+  for (const index of face) {
+    coordinateScale = Math.max(coordinateScale, Math.abs(vertices[index][0]), Math.abs(vertices[index][1]));
+  }
+  const tolerance = 1.0e-14 * coordinateScale * coordinateScale;
+  const triangles = [];
+  let guard = 0;
+  const guardLimit = face.length * face.length;
+
+  while (remaining.length > 3) {
+    guard += 1;
+    if (guard > guardLimit) throw new Error("Cannot triangulate horizontal cap without a centre fan.");
+
+    let earFound = false;
+    const n = remaining.length;
+    for (let k = 0; k < n; k++) {
+      const a = remaining[(k - 1 + n) % n];
+      const b = remaining[k];
+      const c = remaining[(k + 1) % n];
+
+      if (orientation * triangleCrossXY(vertices, a, b, c) <= tolerance) continue;
+
+      let containsOtherPoint = false;
+      for (const candidate of remaining) {
+        if (candidate === a || candidate === b || candidate === c) continue;
+        if (pointInsideProjectedTriangle(vertices, candidate, a, b, c, orientation, tolerance)) {
+          containsOtherPoint = true;
+          break;
+        }
+      }
+      if (containsOtherPoint) continue;
+
+      triangles.push([a, b, c]);
+      remaining.splice(k, 1);
+      earFound = true;
+      break;
+    }
+
+    if (!earFound) throw new Error("Cannot find a valid ear while triangulating a horizontal cap.");
+  }
+
+  triangles.push([remaining[0], remaining[1], remaining[2]]);
+  return triangles;
+}
+function triangulatedExportMeshFromBrep(brep) {
+  const n = sectionVertexCountFromBrep(brep);
+  if (n < 3) throw new Error("Cannot build triangular export mesh: invalid section vertex count.");
+  const vertices = brep.vertices.map(p => [p[0], p[1], p[2]]);
+  const sourceFaces = brep.faces.slice(0, n).map(face => face.slice());
+  sourceFaces.push(...triangulateHorizontalCapFace(vertices, brep.faces[brep.faces.length - 2]));
+  sourceFaces.push(...triangulateHorizontalCapFace(vertices, brep.faces[brep.faces.length - 1]));
+
+  const faces = [];
+  for (const face of sourceFaces) faces.push(...triangulateFace(face));
+  return { vertices, faces };
+}
+function metricsForBrep(brep) {
+  const topo = validateClosedShellEdges(brep.faces);
+  const vol = brepVolume(brep.vertices, brep.faces);
+  const volumeError = vol - brep.dimensions.volume;
+  const relativeVolumeError = volumeError / brep.dimensions.volume;
+  const exportMesh = triangulatedExportMeshFromBrep(brep);
+  return {
+    topology: topo,
+    volume: vol,
+    volumeError,
+    relativeVolumeError,
+    surfaceArea: surfaceArea(brep.vertices, brep.faces),
+    triangles: exportMesh.faces,
+    exportMesh
+  };
+}
+function pythonGFloat(value, precision = 12) {
+  if (!Number.isFinite(value)) return String(value);
+  if (Object.is(value, -0)) return "-0";
+  if (value === 0) return "0";
+  const absValue = Math.abs(value);
+  let exponent = Math.floor(Math.log10(absValue));
+  const useExponential = exponent < -4 || exponent >= precision;
+
+  if (useExponential) {
+    let text = value.toExponential(precision - 1);
+    let [mantissa, expText] = text.split("e");
+    if (Math.abs(Number(mantissa)) >= 10.0) {
+      const expNumber = Number(expText);
+      text = (Number(mantissa) / 10.0).toExponential(precision - 1);
+      [mantissa, expText] = text.split("e");
+      expText = String(expNumber + 1);
+    }
+    mantissa = mantissa.replace(/(\.\d*?)0+$/g, "$1").replace(/\.$/g, "");
+    const expNumber = Number(expText);
+    const sign = expNumber >= 0 ? "+" : "-";
+    const digits = String(Math.abs(expNumber)).padStart(2, "0");
+    return `${mantissa}e${sign}${digits}`;
+  }
+
+  const decimals = Math.max(precision - exponent - 1, 0);
+  let text = value.toFixed(decimals);
+  text = text.replace(/(\.\d*?)0+$/g, "$1").replace(/\.$/g, "");
+  return text === "-0" ? "-0" : text;
+}
+function stlFloat(value) {
+  return pythonGFloat(value, 12);
+}
+function objFloat(value) {
+  return pythonGFloat(value, 12);
+}
+function stlFaceNormal(vertices, tri) {
+  const a = vertices[tri[0]], b = vertices[tri[1]], c = vertices[tri[2]];
+  const normal = vCross(vSub(b, a), vSub(c, a));
+  const len = vLen(normal);
+  if (len <= 0.0) throw new Error("Cannot normalise a zero-length vector.");
+  return [normal[0] / len, normal[1] / len, normal[2] / len];
+}
+function objText(brep) {
+  const mesh = triangulatedExportMeshFromBrep(brep);
+  const objectName = generatedBasename(brep).replace(/ /g, "_");
+  const lines = [];
+  lines.push(`# ${objectName}`);
+  lines.push("# Units: metres");
+  lines.push("# Mesh: Trimesh-validated triangular Antifer boundary surface");
+  lines.push("# XY origin: homogeneous centre of mass; Z origin: bottom level z=0");
+  lines.push("s off");
+  lines.push(`o ${objectName}`);
+  for (const [x, y, z] of mesh.vertices) lines.push(`v ${objFloat(x)} ${objFloat(y)} ${objFloat(z)}`);
+  for (const tri of mesh.faces) lines.push(`f ${tri[0] + 1} ${tri[1] + 1} ${tri[2] + 1}`);
+  return lines.join("\n") + "\n";
+}
+function stlText(brep) {
+  const mesh = triangulatedExportMeshFromBrep(brep);
+  const solidName = generatedBasename(brep).replace(/ /g, "_");
+  const lines = [];
+  lines.push(`solid ${solidName}`);
+  for (const tri of mesh.faces) {
+    const normal = stlFaceNormal(mesh.vertices, tri);
+    lines.push(`  facet normal ${stlFloat(normal[0])} ${stlFloat(normal[1])} ${stlFloat(normal[2])}`);
+    lines.push("    outer loop");
+    for (const idx of tri) {
+      const v = mesh.vertices[idx];
+      lines.push(`      vertex ${stlFloat(v[0])} ${stlFloat(v[1])} ${stlFloat(v[2])}`);
+    }
+    lines.push("    endloop");
+    lines.push("  endfacet");
+  }
+  lines.push(`endsolid ${solidName}`);
+  return lines.join("\n") + "\n";
+}
+
+function generatedBasename(brep) {
+  const d = brep.dimensions;
+  return `antifer_${d.profile.filenameSuffix}_${safeFilenameNumber(d.W_kN)}kN_Wc${safeFilenameNumber(d.Wc_kN_m3)}kNm3`;
+}
+
+/* ============================================================
+   Report generation and UI tables
+
+   Tables and the plain-text report are populated from the same metrics object
+   used by the status panel and export validation.
+   ============================================================ */
+
+function setStatus(message, ok = true) {
+  const el = document.getElementById("status");
+  el.textContent = message;
+  el.className = "status " + (ok ? "ok" : "bad");
+}
+function fillTable(id, rows) {
+  const tbody = document.querySelector(`#${id} tbody`);
+  tbody.innerHTML = "";
+  for (const [name, value] of rows) {
+    const tr = document.createElement("tr");
+    const td1 = document.createElement("td");
+    const td2 = document.createElement("td");
+    td1.textContent = name;
+    td2.textContent = value;
+    td2.className = "value";
+    tr.appendChild(td1);
+    tr.appendChild(td2);
+    tbody.appendChild(tr);
+  }
+}
+function generateReport(brep, metrics, decimals) {
+  const d = brep.dimensions;
+  const topologicalStatus = metrics.topology.closed ? "closed shell" : "open/non-manifold shell";
+  const lines = [];
+  lines.push("ANTIFER GEOMETRY CALCULATION REPORT");
+  lines.push("=".repeat(72));
+  lines.push(`Profile                         : ${d.profile.label}`);
+  lines.push(`Weight W [kN]                   : ${fmt(d.W_kN, decimals)}`);
+  lines.push(`Concrete unit weight Wc [kN/m3] : ${fmt(d.Wc_kN_m3, decimals)}`);
+  lines.push(`Input volume W/Wc [m3]          : ${fmt(d.volume, decimals)}`);
+  lines.push(`Equivalent mass [t]             : ${fmt(d.W_ton, decimals)}`);
+  lines.push("");
+  lines.push("NON-DIMENSIONAL COEFFICIENTS");
+  lines.push("-".repeat(72));
+  lines.push(`Reference kV                    : ${fmt(d.referenceVolumeCoefficient, 12)}`);
+  lines.push(`Generated B-rep kV              : ${fmt(d.generatedVolumeCoefficient, 12)}`);
+  lines.push(`Common horizontal factor f      : ${fmt(d.profile.commonDimensionFactor, 12)}`);
+  lines.push(`A/H                             : ${fmt(d.profile.bottomWidthCoefficient, 12)}`);
+  lines.push(`B/H                             : ${fmt(d.profile.topWidthCoefficient, 12)}`);
+  lines.push(`C/H = (R-E)/H                   : ${fmt(d.profile.grooveDimensionCoefficient, 12)}`);
+  lines.push(`D/H                             : ${fmt(d.profile.edgeChamferCoefficient, 12)}`);
+  lines.push(`R/H                             : ${fmt(d.profile.grooveRadiusCoefficient, 12)}`);
+  lines.push(`E/H                             : ${fmt(d.profile.grooveCentreOffsetCoefficient, 12)}`);
+  lines.push(`q/H                             : ${fmt(d.grooveHalfOpening / d.H, 12)}`);
+  lines.push(`2q/H                            : ${fmt(d.grooveOpening / d.H, 12)}`);
+  lines.push("");
+  lines.push("DIMENSIONS [m]");
+  lines.push("-".repeat(72));
+  lines.push(`H                               : ${fmt(d.H, decimals)}`);
+  lines.push(`A                               : ${fmt(d.A, decimals)}`);
+  lines.push(`B                               : ${fmt(d.B, decimals)}`);
+  lines.push(`C = R - E                       : ${fmt(d.C, decimals)}`);
+  lines.push(`D                               : ${fmt(d.D, decimals)}`);
+  lines.push(`R                               : ${fmt(d.R, decimals)}`);
+  lines.push(`E                               : ${fmt(d.grooveCentreOffset, decimals)}`);
+  lines.push(`q                               : ${fmt(d.grooveHalfOpening, decimals)}`);
+  lines.push(`2q                              : ${fmt(d.grooveOpening, decimals)}`);
+  lines.push(`Main lateral angle from vertical: ${fmt(d.mainLateralAngleFromVerticalDeg, decimals)} deg`);
+  lines.push(`Bottom plane to lateral plane   : ${fmt(d.bottomPlaneToMainLateralPlaneAngleDeg, decimals)} deg`);
+  lines.push("");
+  lines.push("B-REP / VALIDATION");
+  lines.push("-".repeat(72));
+  lines.push(`Vertices                        : ${brep.vertices.length}`);
+  lines.push(`Faces                           : ${brep.faces.length}`);
+  lines.push(`Triangles for OBJ/STL           : ${metrics.triangles.length}`);
+  lines.push(`Unique edges                    : ${metrics.topology.edgeCount}`);
+  lines.push(`Non-manifold/open edges         : ${metrics.topology.badEdgeCount}`);
+  lines.push(`Topology                        : ${topologicalStatus}`);
+  lines.push(`Generated volume [m3]           : ${fmt(metrics.volume, decimals)}`);
+  lines.push(`Volume error [m3]               : ${sci(metrics.volumeError, 6)}`);
+  lines.push(`Relative volume error           : ${sci(metrics.relativeVolumeError, 6)}`);
+  lines.push(`Surface area [m2]               : ${fmt(metrics.surfaceArea, decimals)}`);
+  lines.push(`Centroid exported X [m]         : ${sci(brep.exportedCentroid[0], 6)}`);
+  lines.push(`Centroid exported Y [m]         : ${sci(brep.exportedCentroid[1], 6)}`);
+  lines.push(`Centroid exported Z [m]         : ${fmt(brep.exportedCentroid[2], decimals)}`);
+  return lines.join("\n");
+}
+
+function updateTablesAndReport(brep, metrics, decimals) {
+  const d = brep.dimensions;
+  fillTable("tableInputs", [
+    ["Profile", d.profile.label],
+    ["W [kN]", fmt(d.W_kN, decimals)],
+    ["Wc [kN/m³]", fmt(d.Wc_kN_m3, decimals)],
+    ["V = W/Wc [m³]", fmt(d.volume, decimals)],
+    ["Equivalent mass [t]", fmt(d.W_ton, decimals)]
+  ]);
+  fillTable("tableCoefficients", [
+    ["Reference kV", fmt(d.referenceVolumeCoefficient, 12)],
+    ["Generated B-rep kV", fmt(d.generatedVolumeCoefficient, 12)],
+    ["f", fmt(d.profile.commonDimensionFactor, 12)],
+    ["A/H", fmt(d.profile.bottomWidthCoefficient, 12)],
+    ["B/H", fmt(d.profile.topWidthCoefficient, 12)],
+    ["C/H = (R-E)/H", fmt(d.profile.grooveDimensionCoefficient, 12)],
+    ["D/H", fmt(d.profile.edgeChamferCoefficient, 12)],
+    ["R/H", fmt(d.profile.grooveRadiusCoefficient, 12)],
+    ["E/H", fmt(d.profile.grooveCentreOffsetCoefficient, 12)],
+    ["q/H", fmt(d.grooveHalfOpening / d.H, 12)],
+    ["2q/H", fmt(d.grooveOpening / d.H, 12)]
+  ]);
+  fillTable("tableDimensions", [
+    ["H [m]", fmt(d.H, decimals)],
+    ["A [m]", fmt(d.A, decimals)],
+    ["B [m]", fmt(d.B, decimals)],
+    ["C = R - E [m]", fmt(d.C, decimals)],
+    ["D [m]", fmt(d.D, decimals)],
+    ["R [m]", fmt(d.R, decimals)],
+    ["E [m]", fmt(d.grooveCentreOffset, decimals)],
+    ["q [m]", fmt(d.grooveHalfOpening, decimals)],
+    ["2q [m]", fmt(d.grooveOpening, decimals)],
+    ["Lateral angle from vertical [deg]", fmt(d.mainLateralAngleFromVerticalDeg, decimals)],
+    ["Bottom/lateral plane angle [deg]", fmt(d.bottomPlaneToMainLateralPlaneAngleDeg, decimals)]
+  ]);
+  fillTable("tableValidation", [
+    ["Vertices", String(brep.vertices.length)],
+    ["Faces", String(brep.faces.length)],
+    ["Triangles OBJ/STL", String(metrics.triangles.length)],
+    ["Unique edges", String(metrics.topology.edgeCount)],
+    ["Bad edges", String(metrics.topology.badEdgeCount)],
+    ["Closed shell", metrics.topology.closed ? "yes" : "no"],
+    ["Generated volume [m³]", fmt(metrics.volume, decimals)],
+    ["Volume error [m³]", sci(metrics.volumeError, 6)],
+    ["Relative volume error", sci(metrics.relativeVolumeError, 6)],
+    ["Surface area [m²]", fmt(metrics.surfaceArea, decimals)]
+  ]);
+  activeReport = generateReport(brep, metrics, decimals);
+  const reportWindow = document.getElementById("report");
+  if (reportWindow) reportWindow.value = activeReport;
+  renderEngineeringDrawings(brep);
+}
+
+
+/* ============================================================
+   Engineering drawing canvases
+
+   The top plan, front view and bottom plan are drawn with the Canvas 2D API
+   from the active dimensional geometry. No external drawing library or CAD
+   viewer is required.
+   ============================================================ */
+
+function prepareDrawingCanvas(canvas) {
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(320, Math.round(rect.width * ratio));
+  const h = Math.max(220, Math.round(rect.height * ratio));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  const g = canvas.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  const bg = g.createLinearGradient(0, 0, canvas.width, canvas.height);
+  bg.addColorStop(0.0, "#13264c");
+  bg.addColorStop(0.55, "#0b1a35");
+  bg.addColorStop(1.0, "#071225");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, canvas.width, canvas.height);
+  return { ctx: g, width: canvas.width, height: canvas.height, ratio };
+}
+function drawingTransform(bounds, width, height, ratio) {
+  const margin = 18 * ratio;
+  const modelW = Math.max(bounds.maxX - bounds.minX, 1.0e-9);
+  const modelH = Math.max(bounds.maxY - bounds.minY, 1.0e-9);
+  const scale = Math.min((width - 2 * margin) / modelW, (height - 2 * margin) / modelH);
+  const x0 = 0.5 * width - 0.5 * scale * (bounds.minX + bounds.maxX);
+  const y0 = 0.5 * height + 0.5 * scale * (bounds.minY + bounds.maxY);
+  return {
+    scale,
+    p: (x, y) => [x0 + x * scale, y0 - y * scale]
+  };
+}
+function drawLine2D(g, tr, x1, y1, x2, y2) {
+  const p1 = tr.p(x1, y1);
+  const p2 = tr.p(x2, y2);
+  g.beginPath();
+  g.moveTo(p1[0], p1[1]);
+  g.lineTo(p2[0], p2[1]);
+  g.stroke();
+}
+function drawPolyline2D(g, tr, points, closed = false) {
+  if (!points.length) return;
+  const first = tr.p(points[0][0], points[0][1]);
+  g.beginPath();
+  g.moveTo(first[0], first[1]);
+  for (let i = 1; i < points.length; i++) {
+    const p = tr.p(points[i][0], points[i][1]);
+    g.lineTo(p[0], p[1]);
+  }
+  if (closed) g.closePath();
+  g.stroke();
+}
+function drawText2D(g, tr, text, x, y, align = "center", baseline = "middle") {
+  const p = tr.p(x, y);
+  g.textAlign = align;
+  g.textBaseline = baseline;
+  g.fillText(text, p[0], p[1]);
+}
+function drawTickDimensionH(g, tr, x1, x2, y, label, labelOffset) {
+  const tick = 0.018 / Math.max(tr.scale / 260, 0.25);
+  drawLine2D(g, tr, x1, y, x2, y);
+  drawLine2D(g, tr, x1, y - tick, x1, y + tick);
+  drawLine2D(g, tr, x2, y - tick, x2, y + tick);
+  drawText2D(g, tr, label, 0.5 * (x1 + x2), y + labelOffset, "center", "middle");
+}
+function drawTickDimensionV(g, tr, x, y1, y2, label, labelOffset) {
+  const tick = 0.018 / Math.max(tr.scale / 260, 0.25);
+  drawLine2D(g, tr, x, y1, x, y2);
+  drawLine2D(g, tr, x - tick, y1, x + tick, y1);
+  drawLine2D(g, tr, x - tick, y2, x + tick, y2);
+  const p = tr.p(x + labelOffset, 0.5 * (y1 + y2));
+  g.save();
+  g.translate(p[0], p[1]);
+  g.rotate(-0.5 * Math.PI);
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(label, 0, 0);
+  g.restore();
+}
+function drawDrawingFrame(g, width, height, ratio) {
+  g.strokeStyle = "rgba(147,197,253,0.45)";
+  g.lineWidth = 1 * ratio;
+  g.strokeRect(0.5 * ratio, 0.5 * ratio, width - ratio, height - ratio);
+}
+function drawPlanDrawing(canvasId, widthValue, dimensionSymbol, d, decimals) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const { ctx: g, width, height, ratio } = prepareDrawingCanvas(canvas);
+  const half = 0.5 * widthValue;
+  const dim = Math.max(0.16 * widthValue, 0.12 * d.H);
+  const bounds = { minX: -half - dim, maxX: half + dim, minY: -half - dim, maxY: half + dim };
+  const tr = drawingTransform(bounds, width, height, ratio);
+  drawDrawingFrame(g, width, height, ratio);
+
+  g.save();
+  g.setLineDash([5 * ratio, 4 * ratio]);
+  g.strokeStyle = "rgba(147,197,253,0.50)";
+  g.lineWidth = 1 * ratio;
+  drawLine2D(g, tr, -half - dim * 0.35, 0, half + dim * 0.35, 0);
+  drawLine2D(g, tr, 0, -half - dim * 0.35, 0, half + dim * 0.35);
+  g.restore();
+
+  g.strokeStyle = "#ffffff";
+  g.lineWidth = 2.3 * ratio;
+  g.lineJoin = "round";
+  drawPolyline2D(g, tr, section2D(widthValue, d.D, d.R, d.grooveCentreOffset, DEFAULT_GROOVE_ARC_POINTS), true);
+
+  g.strokeStyle = "#dbeafe";
+  g.lineWidth = 1.05 * ratio;
+  g.fillStyle = "#f8fafc";
+  g.font = `${12 * ratio}px Segoe UI, Arial, sans-serif`;
+  drawTickDimensionH(g, tr, -half, half, -half - dim * 0.43, `${dimensionSymbol} = ${fmt(widthValue, decimals)} m`, -dim * 0.20);
+  drawTickDimensionV(g, tr, half + dim * 0.43, -half, half, `${dimensionSymbol} = ${fmt(widthValue, decimals)} m`, dim * 0.20);
+
+  const q = d.grooveHalfOpening;
+  const cDepth = d.C;
+  g.strokeStyle = "rgba(191,219,254,0.90)";
+  g.lineWidth = 0.95 * ratio;
+  drawLine2D(g, tr, half, -q, half + dim * 0.32, -q);
+  drawLine2D(g, tr, half, q, half + dim * 0.32, q);
+  g.fillStyle = "#f8fafc";
+  drawText2D(g, tr, `2q = ${fmt(2 * q, decimals)} m`, half + dim * 0.48, 0, "center", "middle");
+  drawLine2D(g, tr, half, 0.07 * widthValue, half - cDepth, 0.07 * widthValue);
+  drawText2D(g, tr, `C = ${fmt(cDepth, decimals)} m`, half - 0.5 * cDepth, 0.12 * widthValue, "center", "middle");
+}
+function drawFrontDrawing(canvasId, d, decimals) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const { ctx: g, width, height, ratio } = prepareDrawingCanvas(canvas);
+  const a2 = 0.5 * d.A;
+  const b2 = 0.5 * d.B;
+  const dimX = Math.max(0.20 * d.A, 0.15 * d.H);
+  const dimY = Math.max(0.15 * d.H, 0.12 * d.A);
+  const bounds = { minX: -a2 - dimX, maxX: a2 + dimX, minY: -dimY, maxY: d.H + dimY };
+  const tr = drawingTransform(bounds, width, height, ratio);
+  drawDrawingFrame(g, width, height, ratio);
+
+  g.strokeStyle = "#ffffff";
+  g.lineWidth = 2.3 * ratio;
+  g.lineJoin = "round";
+  drawPolyline2D(g, tr, [[-a2, 0], [a2, 0], [b2, d.H], [-b2, d.H]], true);
+
+  g.save();
+  g.setLineDash([6 * ratio, 4 * ratio]);
+  g.strokeStyle = "rgba(191,219,254,0.82)";
+  g.lineWidth = 1.0 * ratio;
+  drawLine2D(g, tr, -(a2 - d.D), 0, -(b2 - d.D), d.H);
+  drawLine2D(g, tr, (a2 - d.D), 0, (b2 - d.D), d.H);
+  g.restore();
+
+  g.strokeStyle = "#dbeafe";
+  g.lineWidth = 1.05 * ratio;
+  g.fillStyle = "#f8fafc";
+  g.font = `${12 * ratio}px Segoe UI, Arial, sans-serif`;
+  drawTickDimensionH(g, tr, -a2, a2, -dimY * 0.50, `A = ${fmt(d.A, decimals)} m`, -dimY * 0.20);
+  drawTickDimensionH(g, tr, -b2, b2, d.H + dimY * 0.45, `B = ${fmt(d.B, decimals)} m`, dimY * 0.18);
+  drawTickDimensionV(g, tr, a2 + dimX * 0.42, 0, d.H, `H = ${fmt(d.H, decimals)} m`, dimX * 0.16);
+
+  const angleText = `${fmt(d.mainLateralAngleFromVerticalDeg, Math.min(decimals, 3))}° from vertical`;
+  drawText2D(g, tr, angleText, 0, d.H * 0.48, "center", "middle");
+}
+function renderEngineeringDrawings(brep = activeBrep) {
+  if (!brep || !brep.dimensions) return;
+  const decimals = parseIntegerInRange("precision", "Displayed decimals", 3, 12);
+  const d = brep.dimensions;
+  drawPlanDrawing("drawingTop", d.B, "B", d, decimals);
+  drawFrontDrawing("drawingFront", d, decimals);
+  drawPlanDrawing("drawingBottom", d.A, "A", d, decimals);
+}
+
+/* ============================================================
+   Canvas 2D viewer
+
+   The viewer is a lightweight software renderer. It avoids WebGL and external
+   dependencies while preserving an isometric default view, zoom-to-extents
+   fitting, pan, rotation, optional axes and wireframe display. The solid view
+   uses camera-space lighting, specular highlights, contact shadow and crease
+   emphasis to give the Antifer block a more realistic concrete appearance.
+   ============================================================ */
+
+const canvas = document.getElementById("viewer");
+const ctx = canvas.getContext("2d");
+const ISOMETRIC_YAW = -(45.0 * Math.PI / 180.0);
+const ISOMETRIC_PITCH = -(60.0 * Math.PI / 180.0);
+const VIEW_FIT_MARGIN = 0.88;
+const VIEW_DIRECTION_CAMERA = [0.0, 0.0, 1.0];
+const KEY_LIGHT_DIRECTION_CAMERA = vNormalize([-0.64, 0.76, 0.46]);
+const FILL_LIGHT_DIRECTION_CAMERA = vNormalize([0.82, 0.18, 0.34]);
+const CONCRETE_BASE_RGB = [134, 136, 134];
+const CONCRETE_WARM_RGB = [224, 225, 220];
+const CONCRETE_COOL_RGB = [18, 21, 24];
+
+const INITIAL_VIEW_DEFAULTS = Object.freeze({
+  yaw: ISOMETRIC_YAW,
+  pitch: ISOMETRIC_PITCH,
+  zoom: 0.9,
+  panX: 0,
+  panY: 0,
+  wireframeMode: false,
+  showAxes: true,
+  autoRotate: false
+});
+
+const view = {
+  yaw: INITIAL_VIEW_DEFAULTS.yaw,
+  pitch: INITIAL_VIEW_DEFAULTS.pitch,
+  zoom: INITIAL_VIEW_DEFAULTS.zoom,
+  panX: INITIAL_VIEW_DEFAULTS.panX,
+  panY: INITIAL_VIEW_DEFAULTS.panY,
+  dragging: false,
+  dragMode: "rotate",
+  lastX: 0,
+  lastY: 0
+};
+
+function resizeCanvasToDisplaySize() {
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(300, Math.round(rect.width * ratio));
+  const h = Math.max(300, Math.round(rect.height * ratio));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+}
+function resetView() {
+  view.yaw = INITIAL_VIEW_DEFAULTS.yaw;
+  view.pitch = INITIAL_VIEW_DEFAULTS.pitch;
+  view.zoom = INITIAL_VIEW_DEFAULTS.zoom;
+  view.panX = INITIAL_VIEW_DEFAULTS.panX;
+  view.panY = INITIAL_VIEW_DEFAULTS.panY;
+
+  const wireframeMode = document.getElementById("wireframeMode");
+  const showAxes = document.getElementById("showAxes");
+  const autoRotate = document.getElementById("autoRotate");
+
+  if (wireframeMode) wireframeMode.checked = INITIAL_VIEW_DEFAULTS.wireframeMode;
+  if (showAxes) showAxes.checked = INITIAL_VIEW_DEFAULTS.showAxes;
+  if (autoRotate) autoRotate.checked = INITIAL_VIEW_DEFAULTS.autoRotate;
+
+  render();
+}
+function rotatePoint(p) {
+  const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw);
+  const cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+  const x1 = p[0] * cy - p[1] * sy;
+  const y1 = p[0] * sy + p[1] * cy;
+  const z1 = p[2];
+  const y2 = y1 * cp - z1 * sp;
+  const z2 = y1 * sp + z1 * cp;
+  return [x1, y2, z2];
+}
+function rotatedModelFit(vertices) {
+  const rotated = vertices.map(v => rotatePoint(v));
+  const min = [Infinity, Infinity];
+  const max = [-Infinity, -Infinity];
+  for (const r of rotated) {
+    min[0] = Math.min(min[0], r[0]);
+    min[1] = Math.min(min[1], r[1]);
+    max[0] = Math.max(max[0], r[0]);
+    max[1] = Math.max(max[1], r[1]);
+  }
+  const width = Math.max(max[0] - min[0], 1.0e-9);
+  const height = Math.max(max[1] - min[1], 1.0e-9);
+  return {
+    width,
+    height,
+    centre: [0.5 * (min[0] + max[0]), 0.5 * (min[1] + max[1])]
+  };
+}
+function fittedModelScale(vertices, rectW, rectH) {
+  const fit = rotatedModelFit(vertices);
+  const scaleX = VIEW_FIT_MARGIN * rectW / fit.width;
+  const scaleY = VIEW_FIT_MARGIN * rectH / fit.height;
+  return { scale: Math.min(scaleX, scaleY) * view.zoom, centre: fit.centre };
+}
+function projectedVertices(vertices, modelScale, cx, cy, fitCentre) {
+  const centre = fitCentre || [0, 0];
+  return vertices.map(v => {
+    const r = rotatePoint(v);
+    return {
+      x: cx + view.panX + (r[0] - centre[0]) * modelScale,
+      y: cy + view.panY - (r[1] - centre[1]) * modelScale,
+      z: r[2],
+      raw: r
+    };
+  });
+}
+function dominantProjectionAxesForFace(face, vertices) {
+  let nx = 0.0, ny = 0.0, nz = 0.0;
+  for (let i = 0; i < face.length; i++) {
+    const current = vertices[face[i]];
+    const next = vertices[face[(i + 1) % face.length]];
+    nx += (current[1] - next[1]) * (current[2] + next[2]);
+    ny += (current[2] - next[2]) * (current[0] + next[0]);
+    nz += (current[0] - next[0]) * (current[1] + next[1]);
+  }
+  const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+  if (ax >= ay && ax >= az) return [1, 2];
+  if (ay >= ax && ay >= az) return [0, 2];
+  return [0, 1];
+}
+function polygonSignedArea2D(points) {
+  let area = 0.0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  return 0.5 * area;
+}
+function cross2D(a, b, c) {
+  return (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+}
+function pointInTriangle2D(p, a, b, c, eps = 1.0e-12) {
+  const d1 = cross2D(p, a, b);
+  const d2 = cross2D(p, b, c);
+  const d3 = cross2D(p, c, a);
+  const hasNeg = d1 < -eps || d2 < -eps || d3 < -eps;
+  const hasPos = d1 > eps || d2 > eps || d3 > eps;
+  return !(hasNeg && hasPos);
+}
+function triangulateFaceForRendering(face, vertices) {
+  if (face.length <= 4) return triangulateFace(face);
+
+  const axes = dominantProjectionAxesForFace(face, vertices);
+  const points = face.map(index => [vertices[index][axes[0]], vertices[index][axes[1]]]);
+  const signedArea = polygonSignedArea2D(points);
+  if (Math.abs(signedArea) <= 1.0e-18) return triangulateFace(face);
+
+  const orientation = signedArea >= 0 ? 1 : -1;
+  const remaining = points.map((_p, i) => i);
+  const triangles = [];
+  let guard = 0;
+
+  while (remaining.length > 3 && guard < points.length * points.length) {
+    let earFound = false;
+    for (let pos = 0; pos < remaining.length; pos++) {
+      const prevPos = (pos + remaining.length - 1) % remaining.length;
+      const nextPos = (pos + 1) % remaining.length;
+      const prev = remaining[prevPos];
+      const curr = remaining[pos];
+      const next = remaining[nextPos];
+      const a = points[prev], b = points[curr], c = points[next];
+      const turn = cross2D(a, b, c);
+      if (orientation * turn <= 1.0e-12) continue;
+
+      let containsOtherPoint = false;
+      for (const candidate of remaining) {
+        if (candidate === prev || candidate === curr || candidate === next) continue;
+        if (pointInTriangle2D(points[candidate], a, b, c)) {
+          containsOtherPoint = true;
+          break;
+        }
+      }
+      if (containsOtherPoint) continue;
+
+      triangles.push([face[prev], face[curr], face[next]]);
+      remaining.splice(pos, 1);
+      earFound = true;
+      break;
+    }
+    if (!earFound) return triangulateFace(face);
+    guard++;
+  }
+
+  if (remaining.length === 3) {
+    triangles.push([face[remaining[0]], face[remaining[1]], face[remaining[2]]]);
+  }
+  return triangles;
+}
+function renderTrianglesForBrep(vertices, faces) {
+  const tris = [];
+  for (const face of faces) tris.push(...triangulateFaceForRendering(face, vertices));
+  return tris;
+}
+function rgbText(rgb, alpha = 1.0) {
+  const r = Math.round(clamp(rgb[0], 0, 255));
+  const g = Math.round(clamp(rgb[1], 0, 255));
+  const b = Math.round(clamp(rgb[2], 0, 255));
+  if (alpha >= 0.999) return `rgb(${r}, ${g}, ${b})`;
+  return `rgba(${r}, ${g}, ${b}, ${clamp(alpha, 0, 1).toFixed(3)})`;
+}
+function mixRgb(a, b, t) {
+  const u = clamp(t, 0.0, 1.0);
+  return [
+    a[0] + (b[0] - a[0]) * u,
+    a[1] + (b[1] - a[1]) * u,
+    a[2] + (b[2] - a[2]) * u
+  ];
+}
+function projectedBounds(pv) {
+  const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const p of pv) {
+    bounds.minX = Math.min(bounds.minX, p.x);
+    bounds.minY = Math.min(bounds.minY, p.y);
+    bounds.maxX = Math.max(bounds.maxX, p.x);
+    bounds.maxY = Math.max(bounds.maxY, p.y);
+  }
+  bounds.width = Math.max(bounds.maxX - bounds.minX, 1.0);
+  bounds.height = Math.max(bounds.maxY - bounds.minY, 1.0);
+  bounds.centreX = 0.5 * (bounds.minX + bounds.maxX);
+  bounds.centreY = 0.5 * (bounds.minY + bounds.maxY);
+  return bounds;
+}
+function drawViewerBackground(rectW, rectH) {
+  const bg = ctx.createRadialGradient(
+    rectW * 0.43, rectH * 0.34, 0,
+    rectW * 0.52, rectH * 0.58, Math.max(rectW, rectH) * 0.78
+  );
+  bg.addColorStop(0.0, "#3a3d61");
+  bg.addColorStop(0.50, "#2b2f4d");
+  bg.addColorStop(1.0, "#171a31");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, rectW, rectH);
+}
+function drawContactShadow(pv) {
+  const b = projectedBounds(pv);
+  const ratio = window.devicePixelRatio || 1;
+  const shadowWidth = b.width * 0.68;
+  const shadowHeight = Math.max(16 * ratio, b.height * 0.125);
+  const shadowX = b.centreX + b.width * 0.055;
+  const shadowY = b.maxY - b.height * 0.015;
+  const gradient = ctx.createRadialGradient(shadowX, shadowY, 0, shadowX, shadowY, shadowWidth * 0.60);
+  gradient.addColorStop(0.0, "rgba(0,0,0,0.68)");
+  gradient.addColorStop(0.45, "rgba(0,0,0,0.34)");
+  gradient.addColorStop(1.0, "rgba(0,0,0,0.0)");
+  ctx.save();
+  ctx.translate(shadowX, shadowY);
+  ctx.scale(1.0, shadowHeight / Math.max(shadowWidth, 1.0));
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(0, 0, shadowWidth * 0.58, 0, 2.0 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+}
+function triangleNormalCamera(pv, tri) {
+  const a = pv[tri[0]].raw;
+  const b = pv[tri[1]].raw;
+  const c = pv[tri[2]].raw;
+  return vNormalize(vCross(vSub(b, a), vSub(c, a)));
+}
+function concreteLightingColour(normal, avgDepth, depthMin, depthMax) {
+  const key = Math.max(0.0, vDot(normal, KEY_LIGHT_DIRECTION_CAMERA));
+  const fill = Math.max(0.0, vDot(normal, FILL_LIGHT_DIRECTION_CAMERA));
+  const halfVector = vNormalize([
+    KEY_LIGHT_DIRECTION_CAMERA[0] + VIEW_DIRECTION_CAMERA[0],
+    KEY_LIGHT_DIRECTION_CAMERA[1] + VIEW_DIRECTION_CAMERA[1],
+    KEY_LIGHT_DIRECTION_CAMERA[2] + VIEW_DIRECTION_CAMERA[2]
+  ]);
+  const specular = Math.pow(Math.max(0.0, vDot(normal, halfVector)), 20.0) * 0.48;
+  const rim = Math.pow(1.0 - Math.abs(clamp(vDot(normal, VIEW_DIRECTION_CAMERA), -1.0, 1.0)), 2.2) * 0.07;
+  const depthRange = Math.max(depthMax - depthMin, 1.0e-9);
+  const depth = clamp((avgDepth - depthMin) / depthRange, 0.0, 1.0);
+  const shadowBias = 1.0 - clamp(0.90 * key + 0.10 * fill, 0.0, 1.0);
+  const illumination = clamp(0.06 + 1.02 * key + 0.10 * fill + rim - 0.18 * shadowBias - 0.10 * (1.0 - depth), 0.0, 1.24);
+  const coolBase = mixRgb(CONCRETE_COOL_RGB, CONCRETE_BASE_RGB, illumination);
+  const warmBlend = clamp(0.05 + 0.78 * illumination + 0.08 * depth, 0.0, 1.0);
+  const colour = mixRgb(coolBase, CONCRETE_WARM_RGB, warmBlend);
+  return [
+    colour[0] + 255.0 * specular,
+    colour[1] + 255.0 * specular,
+    colour[2] + 255.0 * specular
+  ];
+}
+function faceNormalCamera(pv, face) {
+  const tris = triangulateFaceForRendering(face, activeBrep.vertices);
+  return tris.length ? triangleNormalCamera(pv, tris[0]) : [0, 0, 0];
+}
+function faceAverageDepth(pv, face) {
+  let sum = 0.0;
+  for (const idx of face) sum += pv[idx].z;
+  return sum / Math.max(face.length, 1);
+}
+function drawCreaseEdges(pv, faces) {
+  const faceNormals = faces.map(face => {
+    const tri = triangulateFaceForRendering(face, activeBrep.vertices)[0];
+    return tri ? triangleNormalCamera(pv, tri) : [0, 0, 0];
+  });
+  const edges = new Map();
+  for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+    const face = faces[faceIndex];
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i];
+      const b = face[(i + 1) % face.length];
+      const key = edgeKey(a, b);
+      if (!edges.has(key)) edges.set(key, []);
+      edges.get(key).push({ a, b, faceIndex });
+    }
+  }
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(0.55, 0.72 * (window.devicePixelRatio || 1));
+  for (const entries of edges.values()) {
+    let draw = entries.length === 1;
+    if (entries.length === 2) {
+      const n0 = faceNormals[entries[0].faceIndex];
+      const n1 = faceNormals[entries[1].faceIndex];
+      draw = vDot(n0, n1) < 0.965;
+    }
+    if (!draw) continue;
+
+    const e = entries[0];
+    const za = pv[e.a].z;
+    const zb = pv[e.b].z;
+    const frontAlpha = clamp(0.10 + 0.08 * Math.max(za, zb), 0.10, 0.22);
+    ctx.strokeStyle = `rgba(0,0,0,${frontAlpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.moveTo(pv[e.a].x, pv[e.a].y);
+    ctx.lineTo(pv[e.b].x, pv[e.b].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawWireframeEdges(pv, faces, strokeStyle = "rgba(226,232,240,0.82)", lineWidth = null) {
+  const seen = new Set();
+  ctx.save();
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth || Math.max(0.7, 1.0 * (window.devicePixelRatio || 1));
+  for (const face of faces) {
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i];
+      const b = face[(i + 1) % face.length];
+      const key = edgeKey(a, b);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ctx.beginPath();
+      ctx.moveTo(pv[a].x, pv[a].y);
+      ctx.lineTo(pv[b].x, pv[b].y);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+function renderAxes(modelScale, cx, cy, fitCentre) {
+  if (!document.getElementById("showAxes").checked || !activeBrep) return;
+  const d = activeBrep.dimensions;
+  const len = Math.max(d.A, d.H) * 0.72;
+  const origin = projectedVertices([[0, 0, 0]], modelScale, cx, cy, fitCentre)[0];
+  const axes = [
+    { p: [len, 0, 0], label: "X" },
+    { p: [0, len, 0], label: "Y" },
+    { p: [0, 0, len], label: "Z" }
+  ];
+  ctx.save();
+  ctx.lineWidth = 1.6 * (window.devicePixelRatio || 1);
+  ctx.strokeStyle = "rgba(226,232,240,0.72)";
+  ctx.fillStyle = "rgba(226,232,240,0.9)";
+  ctx.font = `${13 * (window.devicePixelRatio || 1)}px Consolas`;
+  for (const ax of axes) {
+    const p = projectedVertices([ax.p], modelScale, cx, cy, fitCentre)[0];
+    ctx.beginPath();
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    ctx.fillText(ax.label, p.x + 6, p.y - 6);
+  }
+  ctx.restore();
+}
+function render() {
+  resizeCanvasToDisplaySize();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawViewerBackground(canvas.width, canvas.height);
+  if (!activeBrep) return;
+
+  const wireframeMode = document.getElementById("wireframeMode").checked;
+  const rectW = canvas.width, rectH = canvas.height;
+  const cx = rectW / 2, cy = rectH / 2;
+  const fit = fittedModelScale(activeBrep.vertices, rectW, rectH);
+  const modelScale = fit.scale;
+  const pv = projectedVertices(activeBrep.vertices, modelScale, cx, cy, fit.centre);
+
+  if (wireframeMode) {
+    drawWireframeEdges(pv, activeBrep.faces);
+  } else {
+    drawContactShadow(pv);
+    const facesToRender = activeBrep.faces.map((face, idx) => ({
+      face,
+      idx,
+      normal: faceNormalCamera(pv, face),
+      avgZ: faceAverageDepth(pv, face)
+    }));
+    facesToRender.sort((a, bFace) => a.avgZ - bFace.avgZ || a.idx - bFace.idx);
+
+    let depthMin = Infinity;
+    let depthMax = -Infinity;
+    for (const item of facesToRender) {
+      depthMin = Math.min(depthMin, item.avgZ);
+      depthMax = Math.max(depthMax, item.avgZ);
+    }
+
+    ctx.save();
+    ctx.lineJoin = "round";
+    for (const item of facesToRender) {
+      const fill = rgbText(concreteLightingColour(item.normal, item.avgZ, depthMin, depthMax));
+      const first = pv[item.face[0]];
+      ctx.beginPath();
+      ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < item.face.length; i++) {
+        const p = pv[item.face[i]];
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  renderAxes(modelScale, cx, cy, fit.centre);
+}
+
+canvas.addEventListener("contextmenu", ev => ev.preventDefault());
+canvas.addEventListener("mousedown", ev => {
+  view.dragging = true;
+  view.dragMode = (ev.button === 1 || ev.button === 2 || ev.shiftKey) ? "pan" : "rotate";
+  view.lastX = ev.clientX;
+  view.lastY = ev.clientY;
+});
+window.addEventListener("mouseup", () => { view.dragging = false; });
+window.addEventListener("mousemove", ev => {
+  if (!view.dragging) return;
+  const dx = ev.clientX - view.lastX;
+  const dy = ev.clientY - view.lastY;
+  view.lastX = ev.clientX;
+  view.lastY = ev.clientY;
+  if (view.dragMode === "pan") {
+    const ratio = window.devicePixelRatio || 1;
+    view.panX += dx * ratio;
+    view.panY += dy * ratio;
+  } else {
+    view.yaw += dx * 0.008;
+    view.pitch += dy * 0.008;
+  }
+  render();
+});
+canvas.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  const factor = Math.exp(-ev.deltaY * 0.0012);
+  view.zoom = clamp(view.zoom * factor, 0.25, 6.0);
+  render();
+}, { passive: false });
+canvas.addEventListener("dblclick", resetView);
+window.addEventListener("resize", () => {
+  render();
+  renderEngineeringDrawings();
+});
+
+function animationLoop() {
+  if (document.getElementById("autoRotate").checked) {
+    view.yaw += 0.006;
+    render();
+  }
+  requestAnimationFrame(animationLoop);
+}
+requestAnimationFrame(animationLoop);
+
+/* ============================================================
+   Application wiring
+
+   Event handlers intentionally remain at the end of the file so that all DOM
+   elements already exist when listeners are registered.
+   ============================================================ */
+
+function recalculate() {
+  try {
+    const W = parsePositiveNumber("weight", "Antifer weight W");
+    const Wc = parsePositiveNumber("unitWeight", "Concrete unit weight Wc");
+    const arcPoints = DEFAULT_GROOVE_ARC_POINTS;
+    document.getElementById("arcPoints").value = String(arcPoints);
+    const decimals = parseIntegerInRange("precision", "Displayed decimals", 3, 12);
+    const profileKey = selectedProfileKey();
+    const brep = generateAntiferBrep(W, Wc, profileKey, arcPoints);
+    const metrics = metricsForBrep(brep);
+    const tol = Math.max(1.0e-10, Math.abs(brep.dimensions.volume) * VOLUME_TOLERANCE_RELATIVE);
+    const ok = metrics.topology.closed && Math.abs(metrics.volumeError) <= tol * 10;
+    activeBrep = brep;
+    activeMetrics = metrics;
+    updateTablesAndReport(brep, metrics, decimals);
+    render();
+    setStatus(
+      `Profile: ${brep.dimensions.profile.label}\n` +
+      `Generated volume = ${fmt(metrics.volume, decimals)} m³\n` +
+      `Relative volume error = ${sci(metrics.relativeVolumeError, 6)}\n` +
+      `Topology: ${metrics.topology.closed ? "closed shell" : "NOT CLOSED"}`,
+      ok
+    );
+  } catch (err) {
+    console.error(err);
+    setStatus(err.message || String(err), false);
+  }
+}
+
+document.getElementById("recalculate").addEventListener("click", recalculate);
+document.getElementById("resetView").addEventListener("click", resetView);
+document.getElementById("wireframeMode").addEventListener("change", render);
+document.getElementById("showAxes").addEventListener("change", render);
+for (const el of document.querySelectorAll("input[type=\"number\"], input[name=\"profile\"], select")) {
+  el.addEventListener("change", recalculate);
+}
+document.getElementById("downloadObj").addEventListener("click", () => {
+  if (!activeBrep) return;
+  downloadText(generatedBasename(activeBrep) + ".obj", objText(activeBrep), "text/plain");
+});
+document.getElementById("downloadStl").addEventListener("click", () => {
+  if (!activeBrep) return;
+  downloadText(generatedBasename(activeBrep) + ".stl", stlText(activeBrep), "model/stl");
+});
+document.getElementById("downloadReport").addEventListener("click", () => {
+  if (!activeBrep) return;
+  downloadText("output.txt", activeReport || "", "text/plain");
+});
+document.getElementById("copyReport").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(activeReport || "");
+    setStatus("Report copied to clipboard.", true);
+  } catch (_err) {
+    const tempReport = document.createElement("textarea");
+    tempReport.value = activeReport || "";
+    tempReport.setAttribute("readonly", "readonly");
+    tempReport.style.position = "fixed";
+    tempReport.style.left = "-9999px";
+    document.body.appendChild(tempReport);
+    tempReport.select();
+    document.execCommand("copy");
+    document.body.removeChild(tempReport);
+    setStatus("Report copied using fallback clipboard method.", true);
+  }
+});
+
+recalculate();
+</script>
+</body>
+</html>
